@@ -2,85 +2,128 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>중력 기반 공 움직임</title>
+    <title>중력 기반 공 움직임 - 물리 엔진 적용</title>
     <style>
         body, html {
             margin: 0;
             padding: 0;
             overflow: hidden;
             height: 100%;
-        }
-
-        #playground {
-            position: relative;
-            width: 100%;
-            height: 100%;
             background-color: #e0e0e0;
         }
-
-        #ball {
+        #playground {
+            display: block;
+        }
+        #startButton {
             position: absolute;
-            width: 40px;
-            height: 40px;
-            background-color: #ff5722;
-            border-radius: 50%;
-            top: calc(50% - 20px);
-            left: calc(50% - 20px);
+            top: 10px;
+            left: 10px;
+            z-index: 1;
+            padding: 10px 20px;
+            font-size: 16px;
         }
     </style>
+    <!-- Matter.js 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 </head>
 <body>
 
-<div id="playground">
-    <button id="startButton">센서 시작</button>
-    <div id="ball"></div>
-</div>
+<canvas id="playground"></canvas>
+
+<button id="startButton">센서 시작</button>
 
 <script>
+    // Matter.js 모듈 가져오기
+    const Engine = Matter.Engine,
+          Render = Matter.Render,
+          World = Matter.World,
+          Bodies = Matter.Bodies,
+          Body = Matter.Body;
+
+    // 엔진 생성
+    const engine = Engine.create();
+    const world = engine.world;
+
+    // 렌더러 생성
+    const render = Render.create({
+        canvas: document.getElementById('playground'),
+        engine: engine,
+        options: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            wireframes: false,
+            background: '#e0e0e0'
+        }
+    });
+
+    // 공 생성
+    const ball = Bodies.circle(window.innerWidth / 2, window.innerHeight / 2, 20, {
+        restitution: 0.8,
+        friction: 0.05,
+        density: 0.001,
+        render: {
+            fillStyle: '#ff5722',
+            strokeStyle: '#000',
+            lineWidth: 1
+        }
+    });
+
+    // 바닥 및 벽 생성
+    const ground = Bodies.rectangle(window.innerWidth / 2, window.innerHeight + 50, window.innerWidth, 100, { isStatic: true });
+    const ceiling = Bodies.rectangle(window.innerWidth / 2, -50, window.innerWidth, 100, { isStatic: true });
+    const wallLeft = Bodies.rectangle(-50, window.innerHeight / 2, 100, window.innerHeight, { isStatic: true });
+    const wallRight = Bodies.rectangle(window.innerWidth + 50, window.innerHeight / 2, 100, window.innerHeight, { isStatic: true });
+
+    // 월드에 객체 추가
+    World.add(world, [ball, ground, ceiling, wallLeft, wallRight]);
+
+    // 엔진 및 렌더러 실행
+    Engine.run(engine);
+    Render.run(render);
+
+    // 기기의 기울기에 따라 중력 방향 변경
+    function handleOrientation(event) {
+        var x = event.gamma; // 좌우 기울기 (-90 ~ 90)
+        var y = event.beta;  // 앞뒤 기울기 (-180 ~ 180)
+
+        // x와 y를 라디안으로 변환
+        var angleX = x * (Math.PI / 180);
+        var angleY = y * (Math.PI / 180);
+
+        // 중력 가속도 설정
+        world.gravity.x = angleX;
+        world.gravity.y = angleY;
+    }
+
+    // 권한 요청 및 이벤트 리스너 등록
     document.getElementById('startButton').addEventListener('click', function() {
-        // 기기가 DeviceOrientationEvent를 지원하는지 확인
-        if (window.DeviceOrientationEvent) {
-            // iOS 13+에서는 권한 요청 필요
-            if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                DeviceMotionEvent.requestPermission()
-                    .then(function(permissionState) {
-                        if (permissionState === 'granted') {
-                            window.addEventListener('deviceorientation', handleOrientation, true);
-                        } else {
-                            alert('센서 데이터 접근 권한이 필요합니다.');
-                        }
-                    })
-                    .catch(console.error);
-            } else {
-                window.addEventListener('deviceorientation', handleOrientation, true);
-            }
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission()
+                .then(function(permissionState) {
+                    if (permissionState === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                    } else {
+                        alert('센서 데이터 접근 권한이 필요합니다.');
+                    }
+                })
+                .catch(function(error) {
+                    console.error('권한 요청 중 오류 발생:', error);
+                });
         } else {
-            alert("이 기기는 DeviceOrientationEvent를 지원하지 않습니다.");
+            window.addEventListener('deviceorientation', handleOrientation);
         }
+    });
 
-        function handleOrientation(event) {
-            var x = event.gamma; // 좌우 기울기 (-90 ~ 90)
-            var y = event.beta;  // 앞뒤 기울기 (-180 ~ 180)
+    // 윈도우 리사이즈 이벤트 처리 (선택 사항)
+    window.addEventListener('resize', function() {
+        render.canvas.width = window.innerWidth;
+        render.canvas.height = window.innerHeight;
 
-            // 범위 제한
-            if (x >  90) { x =  90;}
-            if (x < -90) { x = -90;}
-
-            // 화면 크기 가져오기
-            var playground = document.getElementById('playground');
-            var ball = document.getElementById('ball');
-
-            var maxX = playground.clientWidth  - ball.offsetWidth;
-            var maxY = playground.clientHeight - ball.offsetHeight;
-
-            // 위치 계산
-            var posX = (x + 90) * (maxX / 180);
-            var posY = (y + 90) * (maxY / 180);
-
-            // 위치 적용
-            ball.style.left = posX + 'px';
-            ball.style.top  = posY + 'px';
-        }
+        // 벽 위치 업데이트
+        Matter.Body.setPosition(ground, { x: window.innerWidth / 2, y: window.innerHeight + 50 });
+        Matter.Body.setPosition(ceiling, { x: window.innerWidth / 2, y: -50 });
+        Matter.Body.setPosition(wallLeft, { x: -50, y: window.innerHeight / 2 });
+        Matter.Body.setPosition(wallRight, { x: window.innerWidth + 50, y: window.innerHeight / 2 });
     });
 </script>
 
