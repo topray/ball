@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>중력 기반 공 움직임</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+        }
+
+        #playground {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background-color: #e0e0e0;
+        }
+
+        #ball {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: #ff5722;
+            border-radius: 50%;
+            top: calc(50% - 20px);
+            left: calc(50% - 20px);
+        }
+    </style>
+</head>
+<body>
+
+<div id="playground">
+    <div id="ball"></div>
+</div>
+
+<script>
+    // 기기가 DeviceOrientationEvent를 지원하는지 확인
+    if (window.DeviceOrientationEvent) {
+        // iOS 13+에서는 권한 요청 필요
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission()
+                .then(function(permissionState) {
+                    if (permissionState === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                    } else {
+                        alert('센서 데이터 접근 권한이 필요합니다.');
+                    }
+                })
+                .catch(console.error);
+        } else {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+        }
+    } else {
+        alert("이 기기는 DeviceOrientationEvent를 지원하지 않습니다.");
+    }
+
+    function handleOrientation(event) {
+        var x = event.gamma; // 좌우 기울기 (-90 ~ 90)
+        var y = event.beta;  // 앞뒤 기울기 (-180 ~ 180)
+
+        // 범위 제한
+        if (x >  90) { x =  90;}
+        if (x < -90) { x = -90;}
+
+        // 화면 크기 가져오기
+        var playground = document.getElementById('playground');
+        var ball = document.getElementById('ball');
+
+        var maxX = playground.clientWidth  - ball.offsetWidth;
+        var maxY = playground.clientHeight - ball.offsetHeight;
+
+        // 위치 계산
+        var posX = (x + 90) * (maxX / 180);
+        var posY = (y + 90) * (maxY / 180);
+
+        // 위치 적용
+        ball.style.left = posX + 'px';
+        ball.style.top  = posY + 'px';
+    }
+</script>
+
+</body>
+</html>
