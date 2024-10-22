@@ -125,6 +125,57 @@
         Matter.Body.setPosition(wallLeft, { x: -50, y: window.innerHeight / 2 });
         Matter.Body.setPosition(wallRight, { x: window.innerWidth + 50, y: window.innerHeight / 2 });
     });
+
+    // 터치 이벤트 변수
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+
+    let touchEndX = 0;
+    let touchEndY = 0;
+    let touchEndTime = 0;
+
+    // 터치 시작 이벤트
+    render.canvas.addEventListener('touchstart', function(event) {
+        const touch = event.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchStartTime = event.timeStamp;
+    });
+
+    // 터치 종료 이벤트
+    render.canvas.addEventListener('touchend', function(event) {
+        const touch = event.changedTouches[0];
+        touchEndX = touch.clientX;
+        touchEndY = touch.clientY;
+        touchEndTime = event.timeStamp;
+
+        // 손가락의 움직임에 따른 속도와 방향 계산
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        const deltaTime = (touchEndTime - touchStartTime) / 1000; // 밀리초를 초로 변환
+
+        // 속도 계산 (픽셀/초)
+        const velocityX = deltaX / deltaTime;
+        const velocityY = deltaY / deltaTime;
+
+        // 공의 위치와 터치 위치 비교
+        const ballPosition = ball.position;
+        const distance = Math.hypot(ballPosition.x - touchStartX, ballPosition.y - touchStartY);
+
+        // 터치 시작 위치가 공과 가까운지 확인 (예: 50픽셀 이내)
+        if (distance < 50) {
+            // 힘의 크기 조절을 위한 스케일 팩터
+            const forceScale = 0.0001; // 필요에 따라 조정
+
+            // 공에 힘 적용
+            Body.applyForce(ball, ballPosition, {
+                x: velocityX * forceScale,
+                y: velocityY * forceScale
+            });
+        }
+    });
+
 </script>
 
 </body>
