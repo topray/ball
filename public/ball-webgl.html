@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>WebGL 공 움직임 예제</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #e0e0e0;
+        }
+        canvas {
+            display: block;
+            touch-action: none; /* 터치 시 기본 동작 방지 */
+        }
+        #startButton {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="glcanvas"></canvas>
+
+<button id="startButton">센서 시작</button>
+
+<script>
+    // JavaScript 코드는 아래에서 추가합니다.
+    // 전체 JavaScript 코드
+
+    // 캔버스와 WebGL 컨텍스트 가져오기
+    const canvas = document.getElementById('glcanvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+    // 캔버스 크기 설정
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // 뷰포트 설정
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+
+    // 배경색 설정
+    gl.clearColor(0.9, 0.9, 0.9, 1.0);
+
+    // 셰이더 소스
+    const vsSource = `
+        attribute vec2 aPosition;
+        uniform vec2 uResolution;
+        void main(void) {
+            vec2 zeroToOne = aPosition / uResolution;
+            vec2 zeroToTwo = zeroToOne * 2.0;
+            vec2 clipSpace = zeroToTwo - 1.0;
+
+            gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+        }
+    `;
+
+    const fsSource = `
+        precision mediump float;
+        uniform vec4 uColor;
+        void main(void) {
+            gl_FragColor = uColor;
+        }
+    `;
+
+    // 셰이더 컴파일 및 프로그램 생성
+    function createShader(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+        if (success) {
+            return shader;
+        }
+        console.log(gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+    }
+
+    function createProgram(gl, vs, fs) {
+        const program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        const success = gl.getProgramParameter(program, gl.LINK_STATUS);
+        if (success) {
+            return program;
+        }
+        console.log(gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+    }
+
+    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+    const program = createProgram(gl, vertexShader, fragmentShader);
+
+    // 공의 위치 및 속도
+    let ballPosition = { x: canvas.width / 2, y: canvas.height / 2 };
+    let ballVelocity = { x: 0, y: 0 };
+    const ballRadius = 20;
+
+    // 중력 가속도
+    let gravity = { x: 0, y: 0 };
+
+    // 기기의 기울기 데이터 수집 여부
+    let sensorStarted = false;
+
+    // 버퍼 및 애트리뷰트 설정
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    const positionLocation = gl.getAttribLocation(program, 'aPosition');
+    const resolutionUniformLocation = gl.getUniformLocation(program, 'uResolution');
+    const colorUniformLocation = gl.getUniformLocation(program, 'uColor');
+
+    // 기기의 기울기 데이터 처리
+    function handleOrientation(event) {
+        const x = event.gamma; // 좌우 기울기 (-90 ~ 90)
+        const y = event.beta;  // 앞뒤 기울기 (-180 ~ 180)
+
+        const gravityScale = 0.5;
+
+        gravity.x = (x / 90) * gravityScale;
+        gravity.y = (y / 90) * gravityScale;
+    }
+
+    document.getElementById('startButton').addEventListener('click', function() {
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission()
+                .then(function(permissionState) {
+                    if (permissionState === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        sensorStarted = true;
+                    } else {
+                        alert('센서 데이터 접근 권한이 필요합니다.');
+                    }
+                })
+                .catch(console.error);
+        } else {
+            window.addEventListener('deviceorientation', handleOrientation);
+            sensorStarted = true;
+        }
+    });
+
+    // 터치 이벤트 처리
+    let isTouching = false;
+    let lastTouchPos = { x: 0, y: 0 };
+    let lastTime = 0;
+
+    canvas.addEventListener('touchstart', function(event) {
+        event.preventDefault();
+        const touch = event.changedTouches[0];
+        const pos = {
+            x: touch.clientX,
+            y: touch.clientY
+        };
+
+        const dx = pos.x - ballPosition.x;
+        const dy = pos.y - ballPosition.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance <= ballRadius) {
+            isTouching = true;
+            lastTouchPos = pos;
+            lastTime = Date.now();
+
+            ballVelocity.x = 0;
+            ballVelocity.y = 0;
+        }
+    });
+
+    canvas.addEventListener('touchmove', function(event) {
+        if (isTouching) {
+            event.preventDefault();
+            const touch = event.changedTouches[0];
+            const pos = {
+                x: touch.clientX,
+                y: touch.clientY
+            };
+
+            ballPosition.x = pos.x;
+            ballPosition.y = pos.y;
+
+            lastTouchPos = pos;
+            lastTime = Date.now();
+        }
+    });
+
+    canvas.addEventListener('touchend', function(event) {
+        if (isTouching) {
+            event.preventDefault();
+            const currentTime = Date.now();
+            let deltaTime = (currentTime - lastTime) / 1000;
+
+            if (deltaTime === 0) deltaTime = 0.016;
+
+            ballVelocity.x = (ballPosition.x - lastTouchPos.x) / deltaTime;
+            ballVelocity.y = (ballPosition.y - lastTouchPos.y) / deltaTime;
+
+            const maxSpeed = 1000;
+            ballVelocity.x = Math.max(-maxSpeed, Math.min(maxSpeed, ballVelocity.x));
+            ballVelocity.y = Math.max(-maxSpeed, Math.min(maxSpeed, ballVelocity.y));
+
+            isTouching = false;
+        }
+    });
+
+    // 애니메이션 루프 및 물리 계산
+    function update(deltaTime) {
+        if (!isTouching) {
+            ballVelocity.x += gravity.x * deltaTime * 500;
+            ballVelocity.y += gravity.y * deltaTime * 500;
+
+            const maxSpeed = 1000;
+            ballVelocity.x = Math.max(-maxSpeed, Math.min(maxSpeed, ballVelocity.x));
+            ballVelocity.y = Math.max(-maxSpeed, Math.min(maxSpeed, ballVelocity.y));
+
+            ballPosition.x += ballVelocity.x * deltaTime;
+            ballPosition.y += ballVelocity.y * deltaTime;
+
+            // 벽과 충돌 처리
+            if (ballPosition.x - ballRadius < 0) {
+                ballPosition.x = ballRadius;
+                ballVelocity.x *= -0.8;
+            } else if (ballPosition.x + ballRadius > canvas.width) {
+                ballPosition.x = canvas.width - ballRadius;
+                ballVelocity.x *= -0.8;
+            }
+
+            if (ballPosition.y - ballRadius < 0) {
+                ballPosition.y = ballRadius;
+                ballVelocity.y *= -0.8;
+            } else if (ballPosition.y + ballRadius > canvas.height) {
+                ballPosition.y = canvas.height - ballRadius;
+                ballVelocity.y *= -0.8;
+            }
+
+            // 마찰력 적용
+            ballVelocity.x *= 0.99;
+            ballVelocity.y *= 0.99;
+        }
+    }
+
+    function draw() {
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        const segments = 30;
+        const circleVertices = createCircleVertices(ballPosition.x, ballPosition.y, ballRadius, segments);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, circleVertices, gl.STATIC_DRAW);
+
+        gl.useProgram(program);
+
+        gl.uniform2f(resolutionUniformLocation, canvas.width, canvas.height);
+
+        gl.uniform4f(colorUniformLocation, 1.0, 0.34, 0.13, 1.0);
+
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        gl.drawArrays(gl.TRIANGLE_FAN, 0, segments + 2);
+    }
+
+    function createCircleVertices(x, y, radius, segments) {
+        const vertices = [];
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            vertices.push(x + radius * Math.cos(angle));
+            vertices.push(y + radius * Math.sin(angle));
+        }
+        return new Float32Array(vertices);
+    }
+
+    let lastTime = 0;
+    function animate(time) {
+        const deltaTime = (time - lastTime) / 1000;
+        lastTime = time;
+
+        update(deltaTime);
+        draw();
+
+        requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+
+    // 윈도우 리사이즈 처리
+    window.addEventListener('resize', function() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    });
+
+</script>
+
+</body>
+</html>
